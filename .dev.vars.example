@@ -1,0 +1,23 @@
+# Cloudflare Worker 本地开发环境变量示例 (.dev.vars)
+# 文件将被 .gitignore 忽略，复制为 .dev.vars 后填入真实值即可生效。
+#
+# 使用方法：
+#   cp .dev.vars.example .dev.vars
+#   # 修改下列值
+#   wrangler dev           # 本地预览时会自动加载 .dev.vars
+
+GH_NAME=octocat
+GH_REPO=Hello-World
+GH_BRANCH=main
+# GitHub PAT：建议只赋予 repo:read 权限
+GH_TOKEN=
+
+# 多目标地址可用逗号、空格或换行分隔
+URL=https://example.com/assets, https://fastly.example.com/assets
+# URL302=                       # 若想使用 302 跳转替代反代，可填写此项
+
+# 自定义错误提示
+ERROR=文件拉取失败，请检查路径或权限！
+
+# 受保护目录及对应密钥示例（格式: 目录:密钥，多条用逗号或分号分隔）
+AUTH_PATHS="config:abc123,secret-folder:xyz789"
