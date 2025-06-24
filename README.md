@@ -112,6 +112,9 @@ https://your-worker.example.workers.dev/path/to/file.js
 
 # 私有仓库（需在 Worker 环境变量中配置 GH_TOKEN）
 https://your-worker.example.workers.dev/path/to/secret.js
+
+# 受保护目录（需同时匹配 secret 参数）
+https://your-worker.example.workers.dev/config/app.yml?secret=abc123
 ```
 
 ## 🧩 贡献指南
