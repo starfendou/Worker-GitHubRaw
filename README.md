@@ -122,5 +122,5 @@ https://your-worker.example.workers.dev/path/to/secret.js
 2. 遵循 **Conventional Commits** 提交规范。
 
 ## 📝 License
-78
-[MIT](LICENSE) © 2025 Your Name 
+
+[MIT](LICENSE) © 2025 Zayrick

@@ -1,7 +1,8 @@
 {
-	"name": "cdn-github-proxy-asset",
+	"name": "cdn-github-raw",
 	"version": "0.0.0",
 	"private": true,
+	"license": "MIT",
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
