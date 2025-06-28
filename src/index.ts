@@ -256,28 +256,21 @@ async function fetchReplacementData(rule: ReplaceRule): Promise<any | null> {
 	const now = Date.now();
 	
 	if (cached && cached.expires > now) {
-		console.log('[API] 使用缓存的 API 数据');
 		return cached.data;
 	}
 	
 	try {
-		console.log(`[API] 发起请求: ${rule.api.method || 'GET'} ${rule.api.url}`);
-		console.log(`[API] 请求头:`, rule.api.headers || {});
-		
 		const response = await fetch(rule.api.url, {
 			method: rule.api.method || 'GET',
 			headers: rule.api.headers || {}
 		});
 		
-		console.log(`[API] 响应状态: ${response.status} ${response.statusText}`);
-		
 		if (!response.ok) {
-			console.error(`[API] 请求失败: ${response.status} ${response.statusText}`);
+			console.error(`API 请求失败: ${response.status} ${response.statusText} (${rule.api.url})`);
 			return null;
 		}
 		
 		const data = await response.json();
-		console.log(`[API] 响应数据结构:`, Object.keys(data as Record<string, any>));
 		
 		// 缓存数据
 		const cacheTTL = (rule.cache || 0) * 1000; // 转换为毫秒
@@ -286,12 +279,11 @@ async function fetchReplacementData(rule: ReplaceRule): Promise<any | null> {
 				data,
 				expires: now + cacheTTL
 			});
-			console.log(`[API] 数据已缓存 ${rule.cache} 秒`);
 		}
 		
 		return data;
 	} catch (error) {
-		console.error('[API] 获取数据失败:', error);
+		console.error('获取 API 数据失败:', error);
 		return null;
 	}
 }
@@ -304,36 +296,26 @@ async function fetchReplacementData(rule: ReplaceRule): Promise<any | null> {
  * @return 替换后的内容
  */
 async function applyReplaceRule(content: string, rule: ReplaceRule): Promise<string> {
-	console.log(`[Apply] 开始应用替换规则，模式: ${rule.mode}`);
-	
 	// 构建替换值映射
 	const replacements: Record<string, string> = {};
 	
 	// 静态替换值优先
 	if (rule.static) {
 		Object.assign(replacements, rule.static);
-		console.log(`[Apply] 静态替换值:`, rule.static);
 	}
 	
 	// API 数据替换
 	if (rule.api && rule.mappings) {
-		console.log(`[Apply] 尝试从 API 获取数据: ${rule.api.url}`);
 		const apiData = await fetchReplacementData(rule);
 		if (apiData) {
-			console.log(`[Apply] API 响应数据:`, JSON.stringify(apiData).substring(0, 200) + '...');
 			for (const [placeholder, jsonPath] of Object.entries(rule.mappings)) {
 				const value = getValueByPath(apiData, jsonPath);
-				console.log(`[Apply] 映射 ${placeholder} = ${jsonPath} => ${value}`);
 				if (value !== undefined) {
 					replacements[placeholder] = String(value);
 				}
 			}
-		} else {
-			console.log(`[Apply] API 数据获取失败`);
 		}
 	}
-	
-	console.log(`[Apply] 最终替换映射:`, replacements);
 	
 	// 执行替换
 	let result = content;
@@ -343,19 +325,11 @@ async function applyReplaceRule(content: string, rule: ReplaceRule): Promise<str
 		case 'env':
 			// 环境变量占位符模式: ${env:variable_name}
 			const envRegex = /\$\{env:([^}]+)\}/g;
-			const envMatches = [...content.matchAll(envRegex)];
-			console.log(`[Apply] 找到 ${envMatches.length} 个 env 占位符`);
-			envMatches.forEach(match => {
-				console.log(`[Apply] 占位符: ${match[0]}, 变量名: ${match[1]}`);
-			});
-			
 			result = content.replace(envRegex, (match, varName) => {
 				if (varName in replacements) {
-					console.log(`[Apply] 替换 ${match} => ${replacements[varName]}`);
 					return replacements[varName];
 				}
 				// 处理未找到替换值的情况
-				console.log(`[Apply] 未找到 ${varName} 的替换值`);
 				switch (errorStrategy) {
 					case 'remove': return '';
 					case 'error': throw new Error(`找不到替换值: ${varName}`);
@@ -420,17 +394,13 @@ function findMatchingRule(pathname: string, rules: ReplaceRule[]): ReplaceRule |
 		decodedPath = decodeURIComponent(pathname);
 	} catch (e) {
 		// 如果解码失败，使用原始路径
-		console.log(`[Match] URL解码失败，使用原始路径`);
 	}
 	
 	const normalizedPath = decodedPath.startsWith('/') ? decodedPath : '/' + decodedPath;
-	console.log(`[Match] 标准化路径: ${normalizedPath} (原始: ${pathname})`);
 	
 	for (const rule of rules) {
-		console.log(`[Match] 检查规则文件列表:`, rule.files);
 		const matches = rule.files.some(file => {
 			const normalizedFile = file.startsWith('/') ? file : '/' + file;
-			console.log(`[Match] 比较: ${normalizedPath} vs ${normalizedFile}`);
 			
 			// 支持通配符匹配
 			if (normalizedFile.includes('*') || normalizedFile.includes('?')) {
@@ -450,26 +420,19 @@ function findMatchingRule(pathname: string, rules: ReplaceRule[]): ReplaceRule |
 					.replace(/\x00STAR\x00/g, '[^/]*')         // * 匹配非/字符
 					.replace(/\x00QUESTION\x00/g, '.');        // ? 匹配单个字符
 				
-				console.log(`[Match] 最终正则模式: ${pattern}`);
 				const regex = new RegExp(`^${pattern}$`);
-				const isMatch = regex.test(normalizedPath);
-				console.log(`[Match] 匹配结果: ${isMatch}`);
-				return isMatch;
+				return regex.test(normalizedPath);
 			}
 			
 			// 精确匹配
-			const isExactMatch = normalizedPath === normalizedFile || normalizedPath.endsWith(normalizedFile);
-			console.log(`[Match] 精确匹配结果: ${isExactMatch}`);
-			return isExactMatch;
+			return normalizedPath === normalizedFile || normalizedPath.endsWith(normalizedFile);
 		});
 		
 		if (matches) {
-			console.log(`[Match] 找到匹配的规则`);
 			return rule;
 		}
 	}
 	
-	console.log(`[Match] 未找到匹配的规则`);
 	return null;
 }
 
@@ -543,22 +506,15 @@ async function handleGithubFileRequest(
 	if (githubResp.ok) {
 		// 检查是否需要进行内容替换
 		const rules = parseReplaceConfig(env.REPLACE_CONFIG);
-		console.log(`[Replace] 解析到 ${rules.length} 条替换规则`);
-		console.log(`[Replace] 请求路径: ${urlPathname}`);
-		
 		const rule = findMatchingRule(urlPathname, rules);
 		
 		if (rule) {
-			console.log(`[Replace] 找到匹配的规则:`, JSON.stringify(rule));
 			try {
 				// 读取原始内容
 				const originalContent = await githubResp.text();
-				console.log(`[Replace] 原始内容长度: ${originalContent.length}`);
 				
 				// 执行内容替换
 				const replacedContent = await applyReplaceRule(originalContent, rule);
-				console.log(`[Replace] 替换后内容长度: ${replacedContent.length}`);
-				console.log(`[Replace] 内容是否改变: ${originalContent !== replacedContent}`);
 				
 				// 构建新的响应
 				const responseHeaders = new Headers(githubResp.headers);
@@ -585,8 +541,6 @@ async function handleGithubFileRequest(
 					headers: retryResp.headers,
 				});
 			}
-		} else {
-			console.log(`[Replace] 未找到匹配的规则`);
 		}
 		
 		/* 透传状态码、Header 与 Body */
