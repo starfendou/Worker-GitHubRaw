@@ -495,15 +495,22 @@ async function handleGithubFileRequest(
 	if (githubResp.ok) {
 		// 检查是否需要进行内容替换
 		const rules = parseReplaceConfig(env.REPLACE_CONFIG);
+		console.log('[DEBUG] 解析的规则:', JSON.stringify(rules, null, 2));
+		console.log('[DEBUG] 请求路径:', urlPathname);
+		
 		const rule = findMatchingRule(urlPathname, rules);
+		console.log('[DEBUG] 匹配的规则:', rule ? JSON.stringify(rule, null, 2) : 'null');
 		
 		if (rule) {
 			try {
 				// 读取原始内容
 				const originalContent = await githubResp.text();
+				console.log('[DEBUG] 原始内容长度:', originalContent.length);
 				
 				// 执行内容替换
 				const replacedContent = await applyReplaceRule(originalContent, rule);
+				console.log('[DEBUG] 替换后内容长度:', replacedContent.length);
+				console.log('[DEBUG] 内容是否改变:', originalContent !== replacedContent);
 				
 				// 构建新的响应
 				const responseHeaders = new Headers(githubResp.headers);
