@@ -21,3 +21,29 @@ ERROR=文件拉取失败，请检查路径或权限！
 
 # 受保护目录及对应密钥示例（格式: 目录:密钥，多条用逗号或分号分隔）
 AUTH_PATHS="config:abc123,secret-folder:xyz789"
+
+# ===== 动态内容替换配置 =====
+# 使用JSON格式配置替换规则，支持多组规则和多种替换模式
+# 配置示例：
+REPLACE_CONFIG='[{"files":["/config/app.yml"],"mode":"env","api":{"url":"https://api.example.com/config/","headers":{"Authorization":"Bearer YOUR_TOKEN"}},"mappings":{"database_host":"data.database.host","api_key":"data.keys.api"},"cache":300}]'
+
+# 完整配置格式说明：
+# [{
+#   "files": ["/path/to/file1", "/path/to/file2"],  // 需要替换的文件列表
+#   "mode": "env",                                   // 替换模式: env (${env:var}), template ({{var}}), regex
+#   "pattern": "\\$\\{([^}]+)\\}",                   // 可选：regex模式下的自定义正则
+#   "api": {                                         // 可选：API数据源配置
+#     "url": "https://api.example.com/data",
+#     "method": "GET",                               // 默认GET
+#     "headers": {"Authorization": "Bearer TOKEN"}
+#   },
+#   "mappings": {                                    // 占位符到JSON路径的映射
+#     "variable_name": "json.path.to.value"
+#   },
+#   "static": {                                      // 可选：静态替换值（优先级高于API）
+#     "version": "1.0.0",
+#     "env": "production"
+#   },
+#   "onError": "keep",                               // 错误处理: keep(保留原文), remove(删除), error(报错)
+#   "cache": 300                                     // 可选：API缓存时间（秒），0表示不缓存
+# }]

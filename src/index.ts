@@ -36,6 +36,26 @@ export interface GithubProxyEnv {
 	URL302?: string;
 	ERROR?: string;
 	AUTH_PATHS?: string;
+	// 动态内容替换JSON配置
+	REPLACE_CONFIG?: string;
+}
+
+/**
+ * @brief 动态内容替换规则配置
+ */
+interface ReplaceRule {
+	files: string[];                     // 需要替换的文件列表
+	mode: 'env' | 'template' | 'regex';  // 替换模式
+	pattern?: string;                    // regex模式下的自定义正则
+	api?: {                              // API数据源配置
+		url: string;
+		method?: string;
+		headers?: Record<string, string>;
+	};
+	mappings?: Record<string, string>;   // 占位符到JSON路径的映射
+	static?: Record<string, string>;     // 静态替换值
+	onError?: 'keep' | 'remove' | 'error'; // 错误处理策略
+	cache?: number;                      // API缓存时间（秒）
 }
 
 /* ************************************************************************** */
@@ -164,6 +184,227 @@ function isAuthorized(pathname: string, request: Request, env: GithubProxyEnv): 
 }
 
 /* ************************************************************************** */
+/*                        动态内容替换相关函数                                  */
+/* ************************************************************************** */
+
+// API 响应缓存存储
+const apiCache = new Map<string, { data: any; expires: number }>();
+
+/**
+ * @brief 解析替换配置
+ *
+ * @param configStr REPLACE_CONFIG 环境变量值
+ * @return 替换规则数组，解析失败返回空数组
+ */
+function parseReplaceConfig(configStr: string | undefined): ReplaceRule[] {
+	if (!configStr) {
+		return [];
+	}
+	
+	try {
+		const config = JSON.parse(configStr);
+		return Array.isArray(config) ? config : [];
+	} catch (e) {
+		console.error('解析 REPLACE_CONFIG 失败:', e);
+		return [];
+	}
+}
+
+/**
+ * @brief 从 JSON 对象中根据路径提取值
+ *
+ * 支持嵌套访问，如 "results.0.proxy_address"
+ * 
+ * @param obj JSON 对象
+ * @param path 访问路径
+ * @return 提取的值，未找到则返回 undefined
+ */
+function getValueByPath(obj: any, path: string): any {
+	const keys = path.split('.');
+	let current = obj;
+	
+	for (const key of keys) {
+		if (current === null || current === undefined) {
+			return undefined;
+		}
+		
+		// 处理数组索引
+		if (/^\d+$/.test(key)) {
+			current = current[parseInt(key, 10)];
+		} else {
+			current = current[key];
+		}
+	}
+	
+	return current;
+}
+
+/**
+ * @brief 从 API 获取替换数据（带缓存）
+ *
+ * @param rule 替换规则
+ * @return API 响应数据，失败返回 null
+ */
+async function fetchReplacementData(rule: ReplaceRule): Promise<any | null> {
+	if (!rule.api?.url) {
+		return null;
+	}
+	
+	// 检查缓存
+	const cacheKey = JSON.stringify(rule.api);
+	const cached = apiCache.get(cacheKey);
+	const now = Date.now();
+	
+	if (cached && cached.expires > now) {
+		console.log('使用缓存的 API 数据');
+		return cached.data;
+	}
+	
+	try {
+		const response = await fetch(rule.api.url, {
+			method: rule.api.method || 'GET',
+			headers: rule.api.headers || {}
+		});
+		
+		if (!response.ok) {
+			console.error(`API 请求失败: ${response.status} ${response.statusText}`);
+			return null;
+		}
+		
+		const data = await response.json();
+		
+		// 缓存数据
+		const cacheTTL = (rule.cache || 0) * 1000; // 转换为毫秒
+		if (cacheTTL > 0) {
+			apiCache.set(cacheKey, {
+				data,
+				expires: now + cacheTTL
+			});
+		}
+		
+		return data;
+	} catch (error) {
+		console.error('获取 API 数据失败:', error);
+		return null;
+	}
+}
+
+/**
+ * @brief 根据规则执行内容替换
+ *
+ * @param content 原始内容
+ * @param rule 替换规则
+ * @return 替换后的内容
+ */
+async function applyReplaceRule(content: string, rule: ReplaceRule): Promise<string> {
+	// 构建替换值映射
+	const replacements: Record<string, string> = {};
+	
+	// 静态替换值优先
+	if (rule.static) {
+		Object.assign(replacements, rule.static);
+	}
+	
+	// API 数据替换
+	if (rule.api && rule.mappings) {
+		const apiData = await fetchReplacementData(rule);
+		if (apiData) {
+			for (const [placeholder, jsonPath] of Object.entries(rule.mappings)) {
+				const value = getValueByPath(apiData, jsonPath);
+				if (value !== undefined) {
+					replacements[placeholder] = String(value);
+				}
+			}
+		}
+	}
+	
+	// 执行替换
+	let result = content;
+	const errorStrategy = rule.onError || 'keep';
+	
+	switch (rule.mode) {
+		case 'env':
+			// 环境变量占位符模式: ${env:variable_name}
+			result = content.replace(/\$\{env:([^}]+)\}/g, (match, varName) => {
+				if (varName in replacements) {
+					return replacements[varName];
+				}
+				// 处理未找到替换值的情况
+				switch (errorStrategy) {
+					case 'remove': return '';
+					case 'error': throw new Error(`找不到替换值: ${varName}`);
+					default: return match; // keep
+				}
+			});
+			break;
+			
+		case 'template':
+			// 模板字符串模式: {{variable_name}}
+			result = content.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
+				varName = varName.trim();
+				if (varName in replacements) {
+					return replacements[varName];
+				}
+				switch (errorStrategy) {
+					case 'remove': return '';
+					case 'error': throw new Error(`找不到替换值: ${varName}`);
+					default: return match; // keep
+				}
+			});
+			break;
+			
+		case 'regex':
+			// 自定义正则表达式模式
+			if (rule.pattern) {
+				try {
+					const regex = new RegExp(rule.pattern, 'g');
+					result = content.replace(regex, (match, ...groups) => {
+						// 如果有捕获组，使用第一个捕获组作为变量名
+						const varName = groups[0] || match;
+						if (varName in replacements) {
+							return replacements[varName];
+						}
+						switch (errorStrategy) {
+							case 'remove': return '';
+							case 'error': throw new Error(`找不到替换值: ${varName}`);
+							default: return match; // keep
+						}
+					});
+				} catch (e) {
+					console.error('正则表达式解析失败:', e);
+				}
+			}
+			break;
+	}
+	
+	return result;
+}
+
+/**
+ * @brief 找到匹配的替换规则
+ *
+ * @param pathname 文件路径
+ * @param rules 替换规则数组
+ * @return 匹配的规则，无匹配返回 null
+ */
+function findMatchingRule(pathname: string, rules: ReplaceRule[]): ReplaceRule | null {
+	const normalizedPath = pathname.startsWith('/') ? pathname : '/' + pathname;
+	
+	for (const rule of rules) {
+		const matches = rule.files.some(file => {
+			const normalizedFile = file.startsWith('/') ? file : '/' + file;
+			return normalizedPath === normalizedFile || normalizedPath.endsWith(normalizedFile);
+		});
+		
+		if (matches) {
+			return rule;
+		}
+	}
+	
+	return null;
+}
+
+/* ************************************************************************** */
 /*                            请求处理函数                                    */
 /* ************************************************************************** */
 
@@ -231,6 +472,45 @@ async function handleGithubFileRequest(
 	const githubResp = await fetch(rawUrl, { headers });
 
 	if (githubResp.ok) {
+		// 检查是否需要进行内容替换
+		const rules = parseReplaceConfig(env.REPLACE_CONFIG);
+		const rule = findMatchingRule(urlPathname, rules);
+		
+		if (rule) {
+			try {
+				// 读取原始内容
+				const originalContent = await githubResp.text();
+				
+				// 执行内容替换
+				const replacedContent = await applyReplaceRule(originalContent, rule);
+				
+				// 构建新的响应
+				const responseHeaders = new Headers(githubResp.headers);
+				// 更新 Content-Length（如果存在）
+				responseHeaders.set('Content-Length', new TextEncoder().encode(replacedContent).length.toString());
+				
+				return new Response(replacedContent, {
+					status: githubResp.status,
+					headers: responseHeaders,
+				});
+			} catch (error) {
+				console.error('内容替换失败:', error);
+				
+				// 根据错误处理策略决定响应
+				if (rule.onError === 'error') {
+					return new Response('文件内容处理失败', { status: 500 });
+				}
+				
+				// 否则返回原始内容
+				// 由于已经消费了 body，需要重新请求
+				const retryResp = await fetch(rawUrl, { headers });
+				return new Response(retryResp.body, {
+					status: retryResp.status,
+					headers: retryResp.headers,
+				});
+			}
+		}
+		
 		/* 透传状态码、Header 与 Body */
 		return new Response(githubResp.body, {
 			status: githubResp.status,
