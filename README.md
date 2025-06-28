@@ -121,7 +121,7 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `files` | string[] | 需要进行内容替换的文件路径列表 |
+| `files` | string[] | 需要进行内容替换的文件路径列表，支持通配符 (*、?) |
 | `mode` | string | 替换模式：`env`、`template`、`regex` |
 | `pattern` | string | 可选，regex模式下的自定义正则表达式 |
 | `api` | object | 可选，API数据源配置 |
@@ -132,6 +132,16 @@
 | `static` | object | 可选，静态替换值（优先级高于API） |
 | `onError` | string | 错误处理策略：`keep`、`remove`、`error` |
 | `cache` | number | API响应缓存时间（秒） |
+
+#### 文件路径匹配规则
+
+- **精确匹配**：`/config/app.yml` - 仅匹配特定文件
+- **通配符匹配**：
+  - `/config/*` - 匹配 config 目录下的所有文件（不含子目录）
+  - `/config/*.yml` - 匹配 config 目录下的所有 yml 文件
+  - `/config/**/*` - 匹配 config 目录及其所有子目录下的文件
+  - `/*/app.yml` - 匹配任意一级目录下的 app.yml 文件
+  - `/config/app-?.yml` - 匹配如 app-1.yml、app-2.yml 等文件
 
 #### 使用示例
 

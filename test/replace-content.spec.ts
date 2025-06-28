@@ -340,4 +340,149 @@ port=443`);
 		expect(content).toContain('name: MyApp');
 		expect(content).toContain('server: api.example.com');
 	});
+
+	it('应该支持通配符匹配文件', async () => {
+		// 模拟 GitHub API 返回 /config/database.yml 文件
+		mockFetch.mockImplementationOnce(() => 
+			Promise.resolve(new Response(`database:
+  host: \${env:db_host}
+  port: \${env:db_port}`, {
+				status: 200,
+				headers: { 'content-type': 'text/plain' }
+			}))
+		);
+
+		const testEnv = {
+			...env,
+			GH_NAME: 'test-user',
+			GH_REPO: 'test-repo',
+			GH_BRANCH: 'main',
+			GH_TOKEN: 'test-token',
+			REPLACE_CONFIG: JSON.stringify([{
+				files: ['/config/*'],  // 通配符匹配
+				mode: 'env',
+				static: {
+					db_host: 'localhost',
+					db_port: '5432'
+				}
+			}])
+		};
+
+		const request = new Request('https://example.com/config/database.yml');
+		const ctx = createExecutionContext();
+		
+		const response = await worker.fetch(request, testEnv, ctx);
+		const content = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(content).toContain('host: localhost');
+		expect(content).toContain('port: 5432');
+	});
+
+	it('应该支持带扩展名的通配符匹配', async () => {
+		// 模拟 GitHub API 返回 .env 文件
+		mockFetch.mockImplementationOnce(() => 
+			Promise.resolve(new Response(`DB_HOST={{database_host}}
+API_KEY={{api_key}}`, {
+				status: 200,
+				headers: { 'content-type': 'text/plain' }
+			}))
+		);
+
+		const testEnv = {
+			...env,
+			GH_NAME: 'test-user',
+			GH_REPO: 'test-repo',
+			GH_BRANCH: 'main',
+			GH_TOKEN: 'test-token',
+			REPLACE_CONFIG: JSON.stringify([{
+				files: ['/env/*.env'],  // 匹配所有 .env 文件
+				mode: 'template',
+				static: {
+					database_host: 'db.example.com',
+					api_key: 'secret123'
+				}
+			}])
+		};
+
+		const request = new Request('https://example.com/env/production.env');
+		const ctx = createExecutionContext();
+		
+		const response = await worker.fetch(request, testEnv, ctx);
+		const content = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(content).toBe(`DB_HOST=db.example.com
+API_KEY=secret123`);
+	});
+
+	it('通配符不应该匹配子目录文件（单星号）', async () => {
+		// 模拟 GitHub API 返回子目录文件
+		mockFetch.mockImplementationOnce(() => 
+			Promise.resolve(new Response(`value: \${env:test}`, {
+				status: 200,
+				headers: { 'content-type': 'text/plain' }
+			}))
+		);
+
+		const testEnv = {
+			...env,
+			GH_NAME: 'test-user',
+			GH_REPO: 'test-repo',
+			GH_BRANCH: 'main',
+			GH_TOKEN: 'test-token',
+			REPLACE_CONFIG: JSON.stringify([{
+				files: ['/config/*'],  // 不应匹配子目录
+				mode: 'env',
+				static: { test: 'replaced' }
+			}])
+		};
+
+		const request = new Request('https://example.com/config/subdir/app.yml');
+		const ctx = createExecutionContext();
+		
+		const response = await worker.fetch(request, testEnv, ctx);
+		const content = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(content).toBe('value: ${env:test}');  // 未被替换
+	});
+
+	it('应该支持双星号通配符匹配多级目录', async () => {
+		// 模拟 GitHub API 返回深层目录文件
+		mockFetch.mockImplementationOnce(() => 
+			Promise.resolve(new Response(`settings:
+  api_url: \${env:api_endpoint}
+  timeout: \${env:timeout}`, {
+				status: 200,
+				headers: { 'content-type': 'text/plain' }
+			}))
+		);
+
+		const testEnv = {
+			...env,
+			GH_NAME: 'test-user',
+			GH_REPO: 'test-repo',
+			GH_BRANCH: 'main',
+			GH_TOKEN: 'test-token',
+			REPLACE_CONFIG: JSON.stringify([{
+				files: ['/config/**/*.yml'],  // 匹配 config 及其子目录下的所有 yml 文件
+				mode: 'env',
+				static: {
+					api_endpoint: 'https://api.example.com/v2',
+					timeout: '30000'
+				}
+			}])
+		};
+
+		const request = new Request('https://example.com/config/deep/nested/settings.yml');
+		const ctx = createExecutionContext();
+		
+		const response = await worker.fetch(request, testEnv, ctx);
+		const content = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(content).toContain('api_url: https://api.example.com/v2');
+		expect(content).toContain('timeout: 30000');
+	});
 }); 

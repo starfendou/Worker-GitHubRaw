@@ -393,6 +393,27 @@ function findMatchingRule(pathname: string, rules: ReplaceRule[]): ReplaceRule |
 	for (const rule of rules) {
 		const matches = rule.files.some(file => {
 			const normalizedFile = file.startsWith('/') ? file : '/' + file;
+			
+			// 支持通配符匹配
+			if (normalizedFile.includes('*') || normalizedFile.includes('?')) {
+				// 将通配符模式转换为正则表达式
+				let pattern = normalizedFile
+					.replace(/[.+^${}()|[\]\\]/g, '\\$&');  // 转义正则特殊字符
+				
+				// 处理 ** （匹配任意层级目录）
+				pattern = pattern.replace(/\\\*\\\*/g, '.*');
+				
+				// 处理 * （匹配当前层级任意字符，但不包括 /）
+				pattern = pattern.replace(/\\\*/g, '[^/]*');
+				
+				// 处理 ? （匹配单个字符）
+				pattern = pattern.replace(/\\\?/g, '.');
+				
+				const regex = new RegExp(`^${pattern}$`);
+				return regex.test(normalizedPath);
+			}
+			
+			// 精确匹配
 			return normalizedPath === normalizedFile || normalizedPath.endsWith(normalizedFile);
 		});
 		

@@ -65,7 +65,51 @@ database:
 }]
 ```
 
-### 3. 混合静态和动态值
+### 3. 通配符匹配
+
+```json
+[
+  {
+    "files": ["/config/*"],
+    "mode": "env",
+    "api": {
+      "url": "https://api.example.com/config/all",
+      "headers": {"Authorization": "Bearer TOKEN"}
+    },
+    "mappings": {
+      "db_host": "database.host",
+      "api_url": "api.endpoint"
+    }
+  },
+  {
+    "files": ["/env/*.env"],
+    "mode": "template",
+    "static": {
+      "NODE_ENV": "production",
+      "API_VERSION": "v2"
+    }
+  },
+  {
+    "files": ["/nginx/sites-*/*.conf"],
+    "mode": "regex",
+    "pattern": "\\$\\{([^}]+)\\}",
+    "api": {
+      "url": "https://api.example.com/nginx/config"
+    },
+    "mappings": {
+      "upstream_host": "upstream.host",
+      "upstream_port": "upstream.port"
+    }
+  }
+]
+```
+
+通配符支持：
+- `*` - 匹配任意字符（不包括路径分隔符）
+- `?` - 匹配单个字符
+- `**` - 匹配任意字符（包括路径分隔符）
+
+### 4. 混合静态和动态值
 
 ```json
 [{
@@ -89,7 +133,7 @@ database:
 }]
 ```
 
-### 4. 多组规则（不同文件使用不同配置）
+### 5. 多组规则（不同文件使用不同配置）
 
 ```json
 [
@@ -131,7 +175,7 @@ database:
 ]
 ```
 
-### 5. 自定义正则表达式
+### 6. 自定义正则表达式
 
 ```json
 [{
@@ -153,7 +197,7 @@ database:
 server_address=#{SERVER_HOST}:#{SERVER_PORT}
 ```
 
-### 6. 错误处理策略
+### 7. 错误处理策略
 
 ```json
 [
@@ -182,7 +226,7 @@ server_address=#{SERVER_HOST}:#{SERVER_PORT}
 ]
 ```
 
-### 7. 复杂的JSON路径访问
+### 8. 复杂的JSON路径访问
 
 ```json
 [{
@@ -323,6 +367,11 @@ server_address=#{SERVER_HOST}:#{SERVER_PORT}
 2. **错误处理**：关键配置使用 `"onError": "error"`，可选配置使用 `"onError": "remove"`
 3. **文件匹配**：支持完整路径匹配，注意以 `/` 开头
 4. **性能考虑**：尽量将相同API的请求合并到一个规则中，避免重复请求
+5. **通配符使用**：
+   - 使用 `*` 匹配同级目录下的文件，避免意外匹配子目录
+   - 使用 `**` 时要谨慎，确保不会匹配到不需要处理的文件
+   - 优先使用具体的文件扩展名匹配，如 `*.yml` 而不是 `*`
+   - 通配符规则的优先级按照配置顺序，建议将更具体的规则放在前面
 
 ## 在 .dev.vars 中使用
 

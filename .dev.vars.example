@@ -25,7 +25,7 @@ AUTH_PATHS="config:abc123,secret-folder:xyz789"
 # ===== 动态内容替换配置 =====
 # 使用JSON格式配置替换规则，支持多组规则和多种替换模式
 # 配置示例：
-REPLACE_CONFIG='[{"files":["/config/app.yml"],"mode":"env","api":{"url":"https://api.example.com/config/","headers":{"Authorization":"Bearer YOUR_TOKEN"}},"mappings":{"database_host":"data.database.host","api_key":"data.keys.api"},"cache":300}]'
+REPLACE_CONFIG='[{"files":["/config/*"],"mode":"env","api":{"url":"https://api.example.com/config/","headers":{"Authorization":"Bearer YOUR_TOKEN"}},"mappings":{"database_host":"data.database.host","api_key":"data.keys.api"},"cache":300}]'
 
 # 完整配置格式说明：
 # [{
@@ -47,3 +47,8 @@ REPLACE_CONFIG='[{"files":["/config/app.yml"],"mode":"env","api":{"url":"https:/
 #   "onError": "keep",                               // 错误处理: keep(保留原文), remove(删除), error(报错)
 #   "cache": 300                                     // 可选：API缓存时间（秒），0表示不缓存
 # }]
+#
+# 文件路径支持通配符：
+# - "/config/*" - 匹配 config 目录下所有文件
+# - "/config/*.yml" - 匹配 config 目录下所有 yml 文件
+# - "/*/app.yml" - 匹配任意一级目录下的 app.yml
